@@ -132,7 +132,7 @@ async fn create_hdfs_log_table(conn: &mut Conn, table_name: &str) -> Result<()> 
   }},
   "sort": {{
     "columns": ["id", "timestamp"],
-    "order": ["asc", "desc"]  
+    "order": ["asc", "desc"]
   }}
 }}'"#,
         table_name
