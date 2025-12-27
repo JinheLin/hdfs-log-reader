@@ -19,7 +19,7 @@ struct LogEntry {
 /// Command-line arguments
 #[derive(Parser, Debug)]
 #[command(name = "hdfs-log-reader")]
-#[command(about = "Process HDFS logs and insert into database or export to CSV", long_about = None)]
+#[command(about = "Process HDFS logs and insert into database", long_about = None)]
 struct Args {
     /// Name of the database table
     table_name: String,
@@ -39,10 +39,6 @@ struct Args {
     /// TiDB port to connect to
     #[arg(long, default_value_t = 4000)]
     tidb_port: u16,
-
-    /// Output file for CSV mode (if specified, will write to CSV instead of database)
-    #[arg(long)]
-    out: Option<PathBuf>,
 
     /// Directory containing the asset files (when empty, uses current directory)
     #[arg(long, default_value = "")]
@@ -159,22 +155,6 @@ async fn insert_hdfs_logs_batch(
     Ok(())
 }
 
-/// Write logs to a CSV file
-fn write_logs_to_csv(logs: &[LogEntry], writer: &mut csv::Writer<File>) -> Result<()> {
-    for log in logs {
-        writer
-            .write_record(&[
-                log.timestamp.to_string(),
-                log.severity_text.clone(),
-                log.body.clone(),
-                log.tenant_id.to_string(),
-            ])
-            .context("Error writing to CSV")?;
-    }
-    writer.flush().context("Error flushing CSV writer")?;
-    Ok(())
-}
-
 /// Process HDFS logs
 async fn process_hdfs_logs(args: Args) -> Result<()> {
     let infilename = if args.asset_dir.is_empty() {
@@ -188,28 +168,8 @@ async fn process_hdfs_logs(args: Args) -> Result<()> {
         infilename.display(), args.batch_size
     );
 
-    let mut conn = if args.out.is_none() {
-        Some(connect_to_database(&args.tidb_host, args.tidb_port).await?)
-    } else {
-        None
-    };
-
-    if let Some(ref mut conn) = conn {
-        create_hdfs_log_table(conn, &args.table_name).await?;
-    }
-
-    let mut csv_writer = if let Some(ref out_path) = args.out {
-        let file = File::create(out_path)
-            .with_context(|| format!("Error creating output file {:?}", out_path))?;
-        let mut writer = csv::Writer::from_writer(file);
-        // Write header
-        writer
-            .write_record(&["timestamp", "severity_text", "body", "tenant_id"])
-            .context("Error writing CSV header")?;
-        Some(writer)
-    } else {
-        None
-    };
+    let mut conn = connect_to_database(&args.tidb_host, args.tidb_port).await?;
+    create_hdfs_log_table(&mut conn, &args.table_name).await?;
 
     let log_iter = read_hdfs_logs(
         infilename.to_str().context("Invalid file path")?,
@@ -227,11 +187,7 @@ async fn process_hdfs_logs(args: Args) -> Result<()> {
                 total_read += 1;
 
                 if batch.len() >= args.batch_size {
-                    if let Some(ref mut writer) = csv_writer {
-                        write_logs_to_csv(&batch, writer)?;
-                    } else if let Some(ref mut conn) = conn {
-                        insert_hdfs_logs_batch(conn, &args.table_name, &batch).await?;
-                    }
+                    insert_hdfs_logs_batch(&mut conn, &args.table_name, &batch).await?;
                     total_inserted += batch.len();
                     println!("Total logs inserted so far: {}", total_inserted);
                     batch.clear();
@@ -245,20 +201,12 @@ async fn process_hdfs_logs(args: Args) -> Result<()> {
 
     // Process remaining batch
     if !batch.is_empty() {
-        if let Some(ref mut writer) = csv_writer {
-            write_logs_to_csv(&batch, writer)?;
-        } else if let Some(ref mut conn) = conn {
-            insert_hdfs_logs_batch(conn, &args.table_name, &batch).await?;
-        }
+        insert_hdfs_logs_batch(&mut conn, &args.table_name, &batch).await?;
         total_inserted += batch.len();
         println!("Total logs inserted so far: {}", total_inserted);
     }
 
     println!("Read {} total log entries from {}", total_read, infilename.display());
-
-    if csv_writer.is_some() {
-        println!("Logs written to CSV file successfully");
-    }
 
     Ok(())
 }
