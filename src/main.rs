@@ -126,7 +126,7 @@ async fn create_hdfs_log_table(conn: &mut Conn, table_name: &str) -> Result<()> 
 
     // Create hybrid index
     let hybrid_index_sql = format!(
-        r#"create hybrid index h_idx on {}(id, timestamp, severity_text, tenant_id) parameter '{{
+        r#"CREATE HYBRID INDEX h_idx ON {}(id, timestamp, severity_text, tenant_id) PARAMETER '{{
   "inverted": {{
     "columns": ["id", "timestamp", "severity_text", "tenant_id"]
   }},
