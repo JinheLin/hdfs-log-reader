@@ -44,7 +44,7 @@ struct Args {
     #[arg(long)]
     out: Option<PathBuf>,
 
-    /// Directory containing the asset files (default: current directory)
+    /// Directory containing the asset files (when empty, uses current directory)
     #[arg(long, default_value = "")]
     asset_dir: String,
 }
@@ -178,15 +178,14 @@ fn write_logs_to_csv(logs: &[LogEntry], writer: &mut csv::Writer<File>) -> Resul
 /// Process HDFS logs
 async fn process_hdfs_logs(args: Args) -> Result<()> {
     let infilename = if args.asset_dir.is_empty() {
-        String::from("hdfs-logs-multitenants.json")
+        PathBuf::from("hdfs-logs-multitenants.json")
     } else {
-        let asset_dir = args.asset_dir.trim_end_matches('/');
-        format!("{}/hdfs-logs-multitenants.json", asset_dir)
+        PathBuf::from(&args.asset_dir).join("hdfs-logs-multitenants.json")
     };
 
     println!(
         "Processing logs from '{}' in batches of {}",
-        infilename, args.batch_size
+        infilename.display(), args.batch_size
     );
 
     let mut conn = if args.out.is_none() {
@@ -212,7 +211,10 @@ async fn process_hdfs_logs(args: Args) -> Result<()> {
         None
     };
 
-    let log_iter = read_hdfs_logs(&infilename, args.max_rows)?;
+    let log_iter = read_hdfs_logs(
+        infilename.to_str().context("Invalid file path")?,
+        args.max_rows,
+    )?;
 
     let mut batch = Vec::with_capacity(args.batch_size);
     let mut total_inserted = 0;
@@ -252,7 +254,7 @@ async fn process_hdfs_logs(args: Args) -> Result<()> {
         println!("Total logs inserted so far: {}", total_inserted);
     }
 
-    println!("Read {} total log entries from {}", total_read, infilename);
+    println!("Read {} total log entries from {}", total_read, infilename.display());
 
     if csv_writer.is_some() {
         println!("Logs written to CSV file successfully");
