@@ -43,6 +43,10 @@ struct Args {
     /// Output file for CSV mode (if specified, will write to CSV instead of database)
     #[arg(long)]
     out: Option<PathBuf>,
+
+    /// Directory containing the asset files (default: current directory)
+    #[arg(long, default_value = "")]
+    asset_dir: String,
 }
 
 /// Connect to the database
@@ -173,8 +177,7 @@ fn write_logs_to_csv(logs: &[LogEntry], writer: &mut csv::Writer<File>) -> Resul
 
 /// Process HDFS logs
 async fn process_hdfs_logs(args: Args) -> Result<()> {
-    let asset_dir = std::env::var("ASSET_DIR").unwrap_or_else(|_| String::from(""));
-    let asset_dir = asset_dir.trim_end_matches('/');
+    let asset_dir = args.asset_dir.trim_end_matches('/');
     let infilename = format!("{}/hdfs-logs-multitenants.json", asset_dir);
 
     println!(
