@@ -94,6 +94,68 @@ async fn create_hdfs_log_table(conn: &mut Conn, table_name: &str) -> Result<()> 
         .context("Error creating table")?;
     println!("Table {} created successfully", table_name);
 
+    // Create FULLTEXT index on body column
+    let ft_body_sql = format!(
+        "ALTER TABLE {} ADD FULLTEXT INDEX ft_body (body) WITH PARSER standard",
+        table_name
+    );
+    conn.exec_drop(ft_body_sql, ())
+        .await
+        .context("Error creating ft_body index")?;
+    println!("Index ft_body created successfully");
+
+    // Create FULLTEXT index on severity_text column
+    let ft_severity_text_sql = format!(
+        "ALTER TABLE {} ADD FULLTEXT INDEX ft_severity_text (severity_text) WITH PARSER standard",
+        table_name
+    );
+    conn.exec_drop(ft_severity_text_sql, ())
+        .await
+        .context("Error creating ft_severity_text index")?;
+    println!("Index ft_severity_text created successfully");
+
+    // Create FULLTEXT index on body and severity_text columns
+    let ft_body_and_severity_text_sql = format!(
+        "ALTER TABLE {} ADD FULLTEXT INDEX ft_body_and_severity_text (body, severity_text) WITH PARSER standard",
+        table_name
+    );
+    conn.exec_drop(ft_body_and_severity_text_sql, ())
+        .await
+        .context("Error creating ft_body_and_severity_text index")?;
+    println!("Index ft_body_and_severity_text created successfully");
+
+    // Create hybrid index
+    let hybrid_index_sql = format!(
+        r#"CREATE HYBRID INDEX h_idx ON {}(id, timestamp, severity_text, tenant_id) PARAMETER '{{
+  "inverted": {{
+    "columns": ["id", "timestamp", "severity_text", "tenant_id"]
+  }},
+  "sort": {{
+    "columns": ["id", "timestamp"],
+    "order": ["asc", "desc"]
+  }}
+}}'"#,
+        table_name
+    );
+    conn.exec_drop(hybrid_index_sql, ())
+        .await
+        .context("Error creating hybrid index h_idx")?;
+    println!("Hybrid index h_idx created successfully");
+
+    // Show create table
+    let show_create_table_sql = format!("SHOW CREATE TABLE {}", table_name);
+    let result: Vec<(String, String)> = conn
+        .exec(show_create_table_sql, ())
+        .await
+        .context("Error executing SHOW CREATE TABLE")?;
+    
+    println!("\n=== SHOW CREATE TABLE {} ===", table_name);
+    for (table, create_stmt) in result {
+        println!("Table: {}", table);
+        println!("Create Table:\n{}", create_stmt);
+    }
+    println!("=== END SHOW CREATE TABLE ===\n");
+
     Ok(())
 }
 
